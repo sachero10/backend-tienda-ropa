@@ -33,34 +33,42 @@ export const createProduct = async (req: Request, res: Response) => {
   }
 };
 
-// export const getProducts = async (req: Request, res: Response) => {
-//   try {
-//     // Traemos todos los productos incluyendo sus variantes
-//     const products = await Product.findAll({
-//       include: [{ model: Variant, as: "variants" }],
-//     });
-//     res.json(products);
-//   } catch (error) {
-//     res.status(500).json({ error: "Error al obtener productos" });
-//   }
-// };
 export const getProducts = async (req: Request, res: Response) => {
   try {
-    const { name, category, brand } = req.query; // Capturamos los filtros de la URL
-    const whereClause: any = {};
+    const { search, category, brand } = req.query; // Cambiamos 'name' por 'search' para que sea más genérico
+    const whereProduct: any = {};
+    const whereVariant: any = {};
 
-    // Si el usuario manda un nombre, buscamos coincidencias parciales (ignore case)
-    if (name) {
-      whereClause.name = { [Op.iLike]: `%${name}%` };
+    // Si hay búsqueda, miramos en Nombre del producto O SKU de la variante
+    if (search) {
+      whereProduct[Op.or] = [
+        { name: { [Op.iLike]: `%${search}%` } },
+        { brand: { [Op.iLike]: `%${search}%` } },
+      ];
+      // También permitimos buscar directamente por el SKU exacto
+      whereVariant.sku = { [Op.iLike]: `%${search}%` };
     }
 
-    // Filtros exactos para categoría y marca
-    if (category) whereClause.category = category;
-    if (brand) whereClause.brand = brand;
+    if (category) whereProduct.category = category;
+    if (brand) whereProduct.brand = brand;
 
     const products = await Product.findAll({
-      where: whereClause,
-      include: [{ model: Variant, as: "variants" }],
+      where: whereProduct,
+      include: [
+        {
+          model: Variant,
+          as: "variants",
+          // Si buscamos por SKU, esto filtrará para traer solo la variante del scanner
+          where: search
+            ? {
+                [Op.or]: [
+                  whereVariant,
+                  { "$Product.name$": { [Op.iLike]: `%${search}%` } },
+                ],
+              }
+            : {},
+        },
+      ],
     });
 
     res.json(products);

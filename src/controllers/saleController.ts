@@ -1,38 +1,58 @@
 import type { Request, Response } from "express";
 import { Op } from "sequelize";
 import sequelize from "../db.js";
-import { Product, Sale, SaleItem, Variant } from "../models.js";
+import { Product, Sale, SaleItem, Variant, SalePayment } from "../models.js";
 
 export const createSale = async (req: Request, res: Response) => {
-  // Usamos una "Transaction" para que si algo falla, no se guarde nada
   const t = await sequelize.transaction();
 
   try {
-    const { total, paymentMethod, items } = req.body;
+    const { total, items, payments } = req.body;
+    // 'payments' ahora es un array: [{method: 'Efectivo', amount: 5000}, {method: 'Tarjeta', amount: 7000}]
 
-    // 1. Creamos la cabecera de la venta
-    const sale = (await Sale.create(
-      { total, paymentMethod },
-      { transaction: t },
-    )) as any;
+    // 1. VALIDACIÓN: Que la suma de pagos coincida con el total
+    const totalPaid = payments.reduce(
+      (acc: number, p: any) => acc + Number(p.amount),
+      0,
+    );
+    if (Math.abs(totalPaid - total) > 0.01) {
+      // Usamos margen por decimales
+      throw new Error(
+        "La suma de los pagos no coincide con el total de la venta",
+      );
+    }
 
-    // 2. Procesamos cada artículo vendido
+    // 2. Creamos la cabecera de la venta (ya sin paymentMethod único)
+    const sale = (await Sale.create({ total }, { transaction: t })) as any;
+
+    // 3. Procesamos los Pagos (Múltiples)
+    for (const p of payments) {
+      await SalePayment.create(
+        {
+          saleId: sale.id,
+          method: p.method,
+          amount: p.amount,
+        },
+        { transaction: t },
+      );
+    }
+
+    // 4. Procesamos los Artículos y Restamos Stock
     for (const item of items) {
       const { variantId, quantity, priceAtSale } = item;
 
-      // Buscamos la variante para ver si hay stock
       const variant = await Variant.findByPk(variantId);
       if (!variant || (variant as any).stock < quantity) {
-        throw new Error(`Stock insuficiente para la variante ${variantId}`);
+        throw new Error(
+          `Stock insuficiente para el SKU: ${(variant as any)?.sku || variantId}`,
+        );
       }
 
-      // Restamos el stock
       await Variant.update(
         { stock: (variant as any).stock - quantity },
         { where: { id: variantId }, transaction: t },
       );
 
-      // Creamos el detalle de la venta
       await SaleItem.create(
         {
           saleId: sale.id,
@@ -44,13 +64,11 @@ export const createSale = async (req: Request, res: Response) => {
       );
     }
 
-    // Si todo salió bien, confirmamos los cambios en la DB
     await t.commit();
     res
       .status(201)
       .json({ message: "Venta registrada con éxito", saleId: sale.id });
   } catch (error: any) {
-    // Si algo falló, deshacemos todo lo que se intentó hacer
     await t.rollback();
     res
       .status(400)
@@ -85,47 +103,37 @@ export const getSales = async (req: Request, res: Response) => {
 export const getSalesReport = async (req: Request, res: Response) => {
   try {
     const { start, end } = req.query;
-
-    if (!start || !end) {
-      return res.status(400).json({
-        error: "Es necesario proveer una fecha de inicio (start) y fin (end).",
-      });
-    }
-
-    // Ajustamos las fechas para que tomen desde el primer segundo del inicio
-    // hasta el último segundo del fin.
     const startDate = new Date(`${start}T00:00:00.000Z`);
     const endDate = new Date(`${end}T23:59:59.999Z`);
 
     const sales = await Sale.findAll({
-      where: {
-        createdAt: {
-          [Op.between]: [startDate, endDate],
-        },
-      },
+      where: { createdAt: { [Op.between]: [startDate, endDate] } },
       include: [
+        { model: SalePayment, as: "payments" }, // Incluimos los pagos
         {
           model: SaleItem,
           as: "items",
           include: [{ model: Variant, include: [Product] }],
         },
       ],
-      order: [["createdAt", "ASC"]],
     });
 
-    // Calculamos el resumen del periodo
-    const totalPeriod = sales.reduce(
-      (acc: number, sale: any) => acc + Number(sale.total),
-      0,
-    );
+    // Calculamos totales por método
+    const summaryMethods: any = {};
+    sales.forEach((sale: any) => {
+      sale.payments.forEach((p: any) => {
+        summaryMethods[p.method] =
+          (summaryMethods[p.method] || 0) + Number(p.amount);
+      });
+    });
 
     res.json({
       period: { start, end },
-      salesCount: sales.length,
-      totalRevenue: totalPeriod,
-      sales, // Enviamos el detalle de todas las ventas encontradas
+      totalRevenue: sales.reduce((acc, s: any) => acc + Number(s.total), 0),
+      byMethod: summaryMethods, // Ejemplo: { Efectivo: 50000, Tarjeta: 30000 }
+      sales,
     });
   } catch (error) {
-    res.status(500).json({ error: "Error al generar el reporte de ventas." });
+    res.status(500).json({ error: "Error al generar reporte" });
   }
 };

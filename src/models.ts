@@ -52,11 +52,27 @@ export const Sale = sequelize.define("Sale", {
     primaryKey: true,
   },
   total: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
-  paymentMethod: { type: DataTypes.STRING, defaultValue: "Efectivo" }, // Efectivo, Transferencia, Tarjeta
   date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
 });
 
-// 4. DETALLE DE VENTA (Qué se llevó en cada venta)
+// 4. MÉTODOS DE PAGO POR VENTA
+export const SalePayment = sequelize.define("SalePayment", {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  method: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  }, // 'Efectivo', 'Tarjeta', 'Transferencia', etc.
+  amount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+  },
+});
+
+// 5. DETALLE DE VENTA (Qué se llevó en cada venta)
 export const SaleItem = sequelize.define("SaleItem", {
   id: {
     type: DataTypes.UUID,
@@ -67,7 +83,7 @@ export const SaleItem = sequelize.define("SaleItem", {
   priceAtSale: { type: DataTypes.DECIMAL(10, 2), allowNull: false }, // Precio al que se vendió en ese momento
 });
 
-// 5. USUARIO (Para autenticación y roles)
+// 6. USUARIO (Para autenticación y roles)
 export const User = sequelize.define("User", {
   id: {
     type: DataTypes.UUID,
@@ -93,4 +109,8 @@ SaleItem.belongsTo(Sale, { foreignKey: "saleId" });
 Variant.hasMany(SaleItem, { foreignKey: "variantId" });
 SaleItem.belongsTo(Variant, { foreignKey: "variantId" });
 
-export default { Product, Variant, Sale, SaleItem };
+// Una Venta tiene muchos Pagos
+Sale.hasMany(SalePayment, { as: "payments", foreignKey: "saleId" });
+SalePayment.belongsTo(Sale, { foreignKey: "saleId" });
+
+export default { Product, Variant, Sale, SaleItem, SalePayment };
