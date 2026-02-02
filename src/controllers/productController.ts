@@ -39,10 +39,11 @@ export const getProducts = async (req: Request, res: Response) => {
     const whereClause: any = {};
 
     if (search) {
+      // Usamos Op.or para buscar en nombre, marca del producto o SKU de la variante
       whereClause[Op.or] = [
         { name: { [Op.iLike]: `%${search}%` } },
         { brand: { [Op.iLike]: `%${search}%` } },
-        { "$variants.sku$": { [Op.iLike]: `%${search}%` } }, // Busca en el SKU de las variantes asociadas
+        { "$variants.sku$": { [Op.iLike]: `%${search}%` } },
       ];
     }
 
@@ -55,15 +56,15 @@ export const getProducts = async (req: Request, res: Response) => {
         {
           model: Variant,
           as: "variants",
+          required: false, // Esto permite que si buscás por marca, el producto aparezca aunque no coincida el SKU
         },
       ],
-      // subQuery: false es VITAL cuando usamos 'where' con filtros de tablas asociadas
-      subQuery: false,
+      subQuery: false, // Obligatorio para que el limit y el filtrado por asociación no rompan la query
     });
 
     res.json(products);
   } catch (error) {
-    console.error(error);
+    console.error("ERROR EN GET_PRODUCTS:", error);
     res.status(500).json({ error: "Error al obtener productos" });
   }
 };

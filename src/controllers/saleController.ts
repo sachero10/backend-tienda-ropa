@@ -79,7 +79,6 @@ export const createSale = async (req: Request, res: Response) => {
 export const getSales = async (req: Request, res: Response) => {
   try {
     const sales = await Sale.findAll({
-      // Incluimos los items de la venta y los detalles del producto/variante
       include: [
         {
           model: SalePayment,
@@ -91,15 +90,17 @@ export const getSales = async (req: Request, res: Response) => {
           include: [
             {
               model: Variant,
-              include: [Product], // Para saber el nombre de la prenda vendida
+              include: [{ model: Product }], // Para saber el nombre de la prenda vendida
             },
           ],
         },
       ],
       order: [["createdAt", "DESC"]], // Las más nuevas primero
     });
+    console.log(`Ventas encontradas: ${sales.length}`); // Log para depurar en Render
     res.json(sales);
   } catch (error) {
+    console.error("ERROR EN GET_SALES:", error);
     res.status(500).json({ error: "Error al obtener historial" });
   }
 };
