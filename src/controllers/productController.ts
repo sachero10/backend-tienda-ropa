@@ -35,44 +35,35 @@ export const createProduct = async (req: Request, res: Response) => {
 
 export const getProducts = async (req: Request, res: Response) => {
   try {
-    const { search, category, brand } = req.query; // Cambiamos 'name' por 'search' para que sea más genérico
-    const whereProduct: any = {};
-    const whereVariant: any = {};
+    const { search, category, brand } = req.query;
+    const whereClause: any = {};
 
-    // Si hay búsqueda, miramos en Nombre del producto O SKU de la variante
     if (search) {
-      whereProduct[Op.or] = [
+      whereClause[Op.or] = [
         { name: { [Op.iLike]: `%${search}%` } },
         { brand: { [Op.iLike]: `%${search}%` } },
+        { "$variants.sku$": { [Op.iLike]: `%${search}%` } }, // Busca en el SKU de las variantes asociadas
       ];
-      // También permitimos buscar directamente por el SKU exacto
-      whereVariant.sku = { [Op.iLike]: `%${search}%` };
     }
 
-    if (category) whereProduct.category = category;
-    if (brand) whereProduct.brand = brand;
+    if (category) whereClause.category = category;
+    if (brand) whereClause.brand = brand;
 
     const products = await Product.findAll({
-      where: whereProduct,
+      where: whereClause,
       include: [
         {
           model: Variant,
           as: "variants",
-          // Si buscamos por SKU, esto filtrará para traer solo la variante del scanner
-          where: search
-            ? {
-                [Op.or]: [
-                  whereVariant,
-                  { "$Product.name$": { [Op.iLike]: `%${search}%` } },
-                ],
-              }
-            : {},
         },
       ],
+      // subQuery: false es VITAL cuando usamos 'where' con filtros de tablas asociadas
+      subQuery: false,
     });
 
     res.json(products);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: "Error al obtener productos" });
   }
 };

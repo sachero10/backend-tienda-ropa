@@ -82,6 +82,10 @@ export const getSales = async (req: Request, res: Response) => {
       // Incluimos los items de la venta y los detalles del producto/variante
       include: [
         {
+          model: SalePayment,
+          as: "payments",
+        },
+        {
           model: SaleItem,
           as: "items",
           include: [
