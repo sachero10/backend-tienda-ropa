@@ -7,23 +7,44 @@ export const createSale = async (req: Request, res: Response) => {
   const t = await sequelize.transaction();
 
   try {
-    const { total, items, payments } = req.body;
-    // 'payments' ahora es un array: [{method: 'Efectivo', amount: 5000}, {method: 'Tarjeta', amount: 7000}]
+    // 1. Extraemos 'discount' del cuerpo de la petición
+    const { total, discount, items, payments } = req.body;
 
-    // 1. VALIDACIÓN: Que la suma de pagos coincida con el total
+    // --- VALIDACIONES DE INTEGRIDAD ---
+    // A. Validar que la suma de los pagos coincida con el total enviado
     const totalPaid = payments.reduce(
       (acc: number, p: any) => acc + Number(p.amount),
       0,
     );
     if (Math.abs(totalPaid - total) > 0.01) {
-      // Usamos margen por decimales
       throw new Error(
         "La suma de los pagos no coincide con el total de la venta",
       );
     }
 
-    // 2. Creamos la cabecera de la venta (ya sin paymentMethod único)
-    const sale = (await Sale.create({ total }, { transaction: t })) as any;
+    // B. (Opcional pero recomendado) Validar que el total realmente sea: (Suma Items - Descuento)
+    const sumItems = items.reduce(
+      (acc: number, item: any) =>
+        acc + Number(item.priceAtSale) * item.quantity,
+      0,
+    );
+    // Calculamos cuál debería ser el total según los productos y el descuento
+    const expectedTotal = sumItems - Number(discount || 0);
+
+    if (Math.abs(expectedTotal - total) > 0.01) {
+      throw new Error(
+        "El total de la venta no coincide con los productos y el descuento aplicado",
+      );
+    }
+
+    // 2. Creamos la cabecera de la venta incluyendo el descuento
+    const sale = (await Sale.create(
+      {
+        total,
+        discount: Number(discount || 0), // Guardamos el descuento en la DB
+      },
+      { transaction: t },
+    )) as any;
 
     // 3. Procesamos los Pagos (Múltiples)
     for (const p of payments) {

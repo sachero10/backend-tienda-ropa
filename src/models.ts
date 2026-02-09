@@ -51,7 +51,8 @@ export const Sale = sequelize.define("Sale", {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
-  total: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
+  total: { type: DataTypes.DECIMAL(10, 2), allowNull: false }, // Monto FINAL cobrado (ya con descuento aplicado)
+  discount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
   date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
 });
 
