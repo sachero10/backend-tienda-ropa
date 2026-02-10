@@ -7,46 +7,55 @@ export const createSale = async (req: Request, res: Response) => {
   const t = await sequelize.transaction();
 
   try {
-    // 1. Extraemos 'discount' del cuerpo de la petición
-    const { total, discount, items, payments } = req.body;
+    // Forzamos que los valores sean números desde el inicio
+    const total = Number(req.body.total);
+    const discount = Number(req.body.discount || 0);
+    const { items, payments } = req.body;
 
-    // --- VALIDACIONES DE INTEGRIDAD ---
-    // A. Validar que la suma de los pagos coincida con el total enviado
+    // --- LOGS DE DEPURACIÓN (Míralos en el Dashboard de Render) ---
+    console.log("--- NUEVA VENTA ---");
+    console.log("Total recibido:", total);
+    console.log("Descuento recibido:", discount);
+
+    // 1. VALIDACIÓN: Pagos vs Total
     const totalPaid = payments.reduce(
       (acc: number, p: any) => acc + Number(p.amount),
       0,
     );
+
     if (Math.abs(totalPaid - total) > 0.01) {
       throw new Error(
-        "La suma de los pagos no coincide con el total de la venta",
+        `Los pagos (${totalPaid}) no coinciden con el total (${total})`,
       );
     }
 
-    // B. (Opcional pero recomendado) Validar que el total realmente sea: (Suma Items - Descuento)
+    // 2. VALIDACIÓN: Integridad de Productos vs Total + Descuento
     const sumItems = items.reduce(
       (acc: number, item: any) =>
         acc + Number(item.priceAtSale) * item.quantity,
       0,
     );
-    // Calculamos cuál debería ser el total según los productos y el descuento
-    const expectedTotal = sumItems - Number(discount || 0);
 
-    if (Math.abs(expectedTotal - total) > 0.01) {
+    // El cálculo correcto: Lo que valen los productos menos el descuento debe ser igual al total enviado
+    const expectedTotal = Number((sumItems - discount).toFixed(2));
+    const receivedTotal = Number(total.toFixed(2));
+
+    console.log("Suma de productos (sin desc):", sumItems);
+    console.log("Total esperado (Suma - Desc):", expectedTotal);
+
+    if (Math.abs(expectedTotal - receivedTotal) > 0.01) {
       throw new Error(
-        "El total de la venta no coincide con los productos y el descuento aplicado",
+        `Error de integridad: El total esperado era ${expectedTotal} pero se recibió ${receivedTotal}`,
       );
     }
 
-    // 2. Creamos la cabecera de la venta incluyendo el descuento
+    // 3. Crear la Venta
     const sale = (await Sale.create(
-      {
-        total,
-        discount: Number(discount || 0), // Guardamos el descuento en la DB
-      },
+      { total, discount },
       { transaction: t },
     )) as any;
 
-    // 3. Procesamos los Pagos (Múltiples)
+    // 4. Procesar Pagos
     for (const p of payments) {
       await SalePayment.create(
         {
@@ -58,15 +67,13 @@ export const createSale = async (req: Request, res: Response) => {
       );
     }
 
-    // 4. Procesamos los Artículos y Restamos Stock
+    // 5. Artículos y Stock
     for (const item of items) {
       const { variantId, quantity, priceAtSale } = item;
-
       const variant = await Variant.findByPk(variantId);
+
       if (!variant || (variant as any).stock < quantity) {
-        throw new Error(
-          `Stock insuficiente para el SKU: ${(variant as any)?.sku || variantId}`,
-        );
+        throw new Error(`Stock insuficiente para variante: ${variantId}`);
       }
 
       await Variant.update(
@@ -91,6 +98,7 @@ export const createSale = async (req: Request, res: Response) => {
       .json({ message: "Venta registrada con éxito", saleId: sale.id });
   } catch (error: any) {
     await t.rollback();
+    console.error("ERROR EN VENTA:", error.message); // Esto saldrá en Render
     res
       .status(400)
       .json({ error: error.message || "Error al procesar la venta" });
