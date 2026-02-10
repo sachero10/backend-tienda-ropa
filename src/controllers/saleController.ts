@@ -7,6 +7,9 @@ export const createSale = async (req: Request, res: Response) => {
   const t = await sequelize.transaction();
 
   try {
+    // LOG DE SEGURIDAD: Para ver exactamente qué manda el frontend
+    console.log("BODY RECIBIDO:", JSON.stringify(req.body, null, 2));
+
     // Forzamos que los valores sean números desde el inicio
     const total = Number(req.body.total);
     const discount = Number(req.body.discount || 0);
