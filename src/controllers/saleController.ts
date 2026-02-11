@@ -8,7 +8,7 @@ export const createSale = async (req: Request, res: Response) => {
 
   try {
     // LOG DE SEGURIDAD: Para ver exactamente qué manda el frontend
-    console.log("BODY RECIBIDO:", JSON.stringify(req.body, null, 2));
+    // console.log("BODY RECIBIDO:", JSON.stringify(req.body, null, 2));
 
     // Forzamos que los valores sean números desde el inicio
     const total = Number(req.body.total);
@@ -16,9 +16,9 @@ export const createSale = async (req: Request, res: Response) => {
     const { items, payments } = req.body;
 
     // --- LOGS DE DEPURACIÓN (Míralos en el Dashboard de Render) ---
-    console.log("--- NUEVA VENTA ---");
-    console.log("Total recibido:", total);
-    console.log("Descuento recibido:", discount);
+    // console.log("--- NUEVA VENTA ---");
+    // console.log("Total recibido:", total);
+    // console.log("Descuento recibido:", discount);
 
     // 1. VALIDACIÓN: Pagos vs Total
     const totalPaid = payments.reduce(
@@ -43,8 +43,8 @@ export const createSale = async (req: Request, res: Response) => {
     const expectedTotal = Number((sumItems - discount).toFixed(2));
     const receivedTotal = Number(total.toFixed(2));
 
-    console.log("Suma de productos (sin desc):", sumItems);
-    console.log("Total esperado (Suma - Desc):", expectedTotal);
+    // console.log("Suma de productos (sin desc):", sumItems);
+    // console.log("Total esperado (Suma - Desc):", expectedTotal);
 
     if (Math.abs(expectedTotal - receivedTotal) > 0.01) {
       throw new Error(
@@ -129,7 +129,7 @@ export const getSales = async (req: Request, res: Response) => {
       ],
       order: [["createdAt", "DESC"]], // Las más nuevas primero
     });
-    console.log(`Ventas encontradas: ${sales.length}`); // Log para depurar en Render
+    // console.log(`Ventas encontradas: ${sales.length}`); // Log para depurar en Render
     res.json(sales);
   } catch (error) {
     console.error("ERROR EN GET_SALES:", error);
@@ -156,8 +156,13 @@ export const getSalesReport = async (req: Request, res: Response) => {
     });
 
     // Calculamos totales por método
+    let totalRevenue = 0;
+    let totalDiscounts = 0;
     const summaryMethods: any = {};
+
     sales.forEach((sale: any) => {
+      totalRevenue += Number(sale.total);
+      totalDiscounts += Number(sale.discount || 0);
       sale.payments.forEach((p: any) => {
         summaryMethods[p.method] =
           (summaryMethods[p.method] || 0) + Number(p.amount);
@@ -166,7 +171,9 @@ export const getSalesReport = async (req: Request, res: Response) => {
 
     res.json({
       period: { start, end },
-      totalRevenue: sales.reduce((acc, s: any) => acc + Number(s.total), 0),
+      // totalRevenue: sales.reduce((acc, s: any) => acc + Number(s.total), 0),
+      totalRevenue, // Lo que realmente entró a caja
+      totalDiscounts, // Lo que se descontó
       byMethod: summaryMethods, // Ejemplo: { Efectivo: 50000, Tarjeta: 30000 }
       sales,
     });
