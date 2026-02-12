@@ -1,7 +1,17 @@
 // src/controllers/productController.ts
+import sequelize from "../db.js";
 import { Op } from "sequelize";
 import type { Request, Response } from "express";
 import { Product, Variant } from "../models.js";
+
+// Función auxiliar para generar SKU si viene vacío
+const generateSKU = (productName: string, size: string, color: string) => {
+  const cleanName = productName.substring(0, 3).toUpperCase();
+  const cleanSize = size.toUpperCase();
+  const cleanColor = color.substring(0, 3).toUpperCase();
+  const random = Math.floor(1000 + Math.random() * 9000);
+  return `${cleanName}-${cleanSize}-${cleanColor}-${random}`; // EJ: REM-L-ROJ-4821
+};
 
 export const createProduct = async (req: Request, res: Response) => {
   try {
@@ -66,6 +76,79 @@ export const getProducts = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("ERROR EN GET_PRODUCTS:", error);
     res.status(500).json({ error: "Error al obtener productos" });
+  }
+};
+
+export const updateProduct = async (req: Request, res: Response) => {
+  const t = await sequelize.transaction();
+  const { id } = req.params;
+
+  try {
+    const { name, description, brand, category, variants } = req.body;
+
+    // 1. Verificar que el producto exista (incluso si está borrado lógicamente, por si queremos restaurar al editar)
+    const product = await Product.findByPk(id, { paranoid: false });
+
+    if (!product) {
+      await t.rollback();
+      return res.status(404).json({ error: "Producto no encontrado" });
+    }
+
+    // 2. Actualizar datos del Padre (Producto)
+    await product.update(
+      { name, description, brand, category },
+      { transaction: t },
+    );
+
+    // 3. Procesar las Variantes (Hijos)
+    if (variants && Array.isArray(variants)) {
+      for (const v of variants) {
+        // Lógica de SKU: Si viene vacío, lo generamos. Si viene, lo usamos.
+        const skuFinal =
+          v.sku && v.sku.trim() !== ""
+            ? v.sku
+            : generateSKU(name, v.size, v.color);
+
+        if (v.id) {
+          // A) Si tiene ID, es una variante existente -> ACTUALIZAR
+          const variantToUpdate = await Variant.findByPk(v.id);
+          if (variantToUpdate) {
+            await variantToUpdate.update(
+              {
+                size: v.size,
+                color: v.color,
+                costPrice: v.costPrice,
+                sellPrice: v.sellPrice,
+                stock: v.stock, // Aquí permitimos corregir el stock manual
+                sku: skuFinal,
+              },
+              { transaction: t },
+            );
+          }
+        } else {
+          // B) Si NO tiene ID, es una variante nueva -> CREAR
+          await Variant.create(
+            {
+              productId: id, // Vinculamos al padre
+              size: v.size,
+              color: v.color,
+              costPrice: v.costPrice,
+              sellPrice: v.sellPrice,
+              stock: v.stock,
+              sku: skuFinal,
+            },
+            { transaction: t },
+          );
+        }
+      }
+    }
+
+    await t.commit();
+    res.json({ message: "Producto actualizado correctamente", product });
+  } catch (error: any) {
+    await t.rollback();
+    console.error("Error al actualizar producto:", error);
+    res.status(500).json({ error: "Error al actualizar el producto" });
   }
 };
 
