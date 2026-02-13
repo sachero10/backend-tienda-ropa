@@ -45,7 +45,7 @@ export const createProduct = async (req: Request, res: Response) => {
 
 export const getProducts = async (req: Request, res: Response) => {
   try {
-    const { search, category, brand } = req.query;
+    const { search, category, brand, withDeleted } = req.query;
     const whereClause: any = {};
 
     if (search) {
@@ -62,14 +62,18 @@ export const getProducts = async (req: Request, res: Response) => {
 
     const products = await Product.findAll({
       where: whereClause,
+      paranoid: withDeleted === "true" ? false : true,
       include: [
         {
           model: Variant,
           as: "variants",
           required: false, // Esto permite que si buscás por marca, el producto aparezca aunque no coincida el SKU
+          // Ver también las variantes eliminadas cuando ves el producto:
+          paranoid: withDeleted === "true" ? false : true,
         },
       ],
       subQuery: false, // Obligatorio para que el limit y el filtrado por asociación no rompan la query
+      order: [["createdAt", "DESC"]], // Para ver los más nuevos primero
     });
 
     res.json(products);
